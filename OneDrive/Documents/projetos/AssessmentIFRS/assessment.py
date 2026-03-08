@@ -11,14 +11,14 @@ st.set_page_config(
 
 st.markdown("<a id='top'></a>", unsafe_allow_html=True)
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# ── CSS ────
 st.markdown("""
 <style>
     .main { background-color: #f4f6f9; }
     h1, h2, h3 { color: #1a3c5e; }
     .stTabs [data-baseweb="tab"] { font-weight: 600; font-size: 0.93rem; }
     .card {
-        background: #ffffff;
+        background: #ffff;
         border-radius: 8px;
         padding: 16px 20px;
         margin-bottom: 12px;
@@ -64,7 +64,7 @@ st.markdown("""
         border-left: 3px solid #ccc;
     }
     .diagnostico-box {
-        background: #ffffff;
+        background: #ffff;
         border-left: 5px solid #1f77b4;
         padding: 14px 18px;
         border-radius: 6px;
@@ -72,7 +72,7 @@ st.markdown("""
         font-size: 0.92rem;
     }
     .interpretacao-box {
-        background: #ffffff;
+        background: #ffff;
         border-top: 4px solid #1a3c5e;
         border-radius: 8px;
         padding: 20px 24px;
@@ -96,7 +96,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── DADOS POR SETOR ───────────────────────────────────────────────────────────
+# ── DADOS POR SETOR ────
 SETORES = {
     "🏦 Financeiro (Bancos, Seguradoras, Asset Managers)": "financeiro",
     "⚡ Energia & Utilities": "energia",
@@ -537,11 +537,67 @@ COSO_COMPONENTES = {
 EMOJIS_NOTA = ["🔴", "🟠", "🟡", "🔵", "🟢"]
 LABELS_NOTA = ["Não iniciado", "Em discussão", "Planejado", "Implementado parcialmente", "Implementado e auditável"]
 
-# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════════
+# INICIALIZAÇÃO DO SESSION_STATE - SOLUÇÃO ROBUSTA PARA PRESERVAR RESPOSTAS
+# ════════════════════════════════════════════════════════════════════════════════
+# 
+# PROBLEMA: O Streamlit perde os valores dos sliders quando eles não são renderizados
+# (ao mudar de pilar). Isso acontece porque:
+# 1. Os widgets só existem no session_state enquanto estão sendo renderizados
+# 2. Quando o usuário muda de pilar, os sliders do pilar anterior não são renderizados
+# 3. O Streamlit pode limpar esses valores do session_state
+#
+# SOLUÇÃO: 
+# 1. Criar uma estrutura de dados dedicada ('respostas_assessment') no session_state
+# 2. Inicializar TODOS os valores ANTES de renderizar qualquer widget
+# 3. Usar callbacks para sincronizar os valores do widget com a estrutura dedicada
+# 4. Os sliders sempre leem da estrutura dedicada, não diretamente do session_state
+# ════════════════════════════════════════════════════════════════════════════════
+
+def inicializar_respostas():
+    """
+    Inicializa a estrutura de respostas no session_state.
+    Esta função deve ser chamada ANTES de qualquer widget ser renderizado.
+    """
+    if 'respostas_assessment' not in st.session_state:
+        st.session_state.respostas_assessment = {}
+    
+    # Inicializar todas as chaves de resposta com valor padrão 0
+    for pilar, info in perguntas.items():
+        for idx in range(1, len(info["itens"]) + 1):
+            chave = f"{pilar}_{idx}"
+            if chave not in st.session_state.respostas_assessment:
+                st.session_state.respostas_assessment[chave] = 0
+
+def obter_resposta(pilar: str, idx: int) -> int:
+    """
+    Obtém o valor da resposta da estrutura dedicada.
+    Sempre retorna um valor válido (0-4).
+    """
+    chave = f"{pilar}_{idx}"
+    return st.session_state.respostas_assessment.get(chave, 0)
+
+def salvar_resposta(pilar: str, idx: int):
+    """
+    Callback para salvar o valor do slider na estrutura dedicada.
+    Esta função é chamada automaticamente quando o slider muda.
+    """
+    chave_slider = f"slider_{pilar}_{idx}"
+    chave_resposta = f"{pilar}_{idx}"
+    
+    if chave_slider in st.session_state:
+        st.session_state.respostas_assessment[chave_resposta] = st.session_state[chave_slider]
+
+# ════════════════════════════════════════════════════════════════════════════════
+# CHAMAR INICIALIZAÇÃO ANTES DE QUALQUER WIDGET
+# ════════════════════════════════════════════════════════════════════════════════
+inicializar_respostas()
+
+# ── SIDEBAR ────
 with st.sidebar:
     st.markdown(" 🌿 IFRS S1 & S2 Assessment")
     st.markdown("Selecione o setor da empresa:")
-    setor_label = st.selectbox("Setor", list(SETORES.keys()), label_visibility="collapsed")
+    setor_label = st.selectbox("Setor", list(SETORES.keys()), label_visibility="collapsed", key="setor_selectbox")
     setor_key = SETORES[setor_label]
     st.markdown("---")
     st.markdown("Escala de maturidade (0–4):")
@@ -558,7 +614,7 @@ with st.sidebar:
     st.markdown("Regulação BR: Resolução CVM 193/2023")
     st.caption("🔒 Nenhum dado é armazenado. Sessão 100% local.")
 
-# ── HEADER ────────────────────────────────────────────────────────────────────
+# ── HEADER ────
 st.title("🌿 IFRS S1 & S2 — Readiness Assessment")
 st.markdown(f"Diagnóstico de Maturidade para Divulgações de Sustentabilidade e Clima | Setor selecionado: {setor_label}")
 st.caption("Baseado no framework TCFD, normas ISSB (IFRS S1 & S2) e componentes COSO | Resolução CVM 193/2023")
@@ -583,19 +639,18 @@ with st.expander("📘 Entenda o IFRS S1 & S2: O que muda e quem é obrigado?", 
         - Asseguração: limitada no período voluntário e razoável a partir da obrigatoriedade.
 
         🚩 O que a norma obriga?
-        Divulgar informações materiais sobre riscos e oportunidades em 4 pilares: Governança, Estratégia, Gestão de Riscos e Métricas/Metas. No caso do Clima (S2), exige a divulgação de emissões de GEE (Escopo 1, 2 e, quando material, Escopo 3).
+        Divulgar informações materiais sobre riscos e oportunidades em 4 pilares: Governança, Estratégia, Gestão de Riscos e Métricas/Metas. No pilar climático (S2), exige ainda análise de cenários, plano de transição e inventário de emissões (Escopos 1, 2 e 3).
         """)
-    st.info("💡 Dica: Este assessment foca na prontidão (readiness) para esses 4 pilares, ajudando a identificar onde os controles internos precisam ser reforçados antes da auditoria obrigatória.")
 
-st.divider()
 
-# ──  BARRA DE PROGRESSO GLOBAL ──────────────────────────────────────
+# ──  BARRA DE PROGRESSO GLOBAL ────
+# Usar a estrutura dedicada para calcular o progresso
 total_perguntas = sum(len(info["itens"]) for info in perguntas.values())
 
 respondidas = sum(
     1 for pilar, info in perguntas.items()
     for idx in range(1, len(info["itens"]) + 1)
-    if st.session_state.get(f"slider_{pilar}_{idx}", 0) != 0
+    if obter_resposta(pilar, idx) != 0
 )
 
 pct_progresso = respondidas / total_perguntas if total_perguntas else 0
@@ -611,33 +666,45 @@ with col_prog2:
 
 st.divider()
 
-# ── PERGUNTAS ─────────────────────────────────────────────────────────────────
+
+# ── PERGUNTAS ────
 scores = {}
 respostas_detalhe = []
 
 pilares_lista = list(perguntas.keys())
-
-if "_nav_target" in st.session_state:
-    st.session_state["radio_pilar"] = st.session_state.pop("_nav_target")
 
 pilar_selecionado = st.radio(
     "Selecione o pilar:",
     pilares_lista,
     horizontal=True,
     format_func=lambda x: x,
-    key="radio_pilar"
+    key="radio_pilar_main"
 )
 
 st.markdown("---")
 
+# Calculate scores for all pilares, using the dedicated response structure
 for pilar in pilares_lista:
     info = perguntas[pilar]
     pilar_scores_calc = [
-        st.session_state.get(f"slider_{pilar}_{idx}", 0)
+        obter_resposta(pilar, idx)
         for idx in range(1, len(info["itens"]) + 1)
     ]
     scores[pilar] = (sum(pilar_scores_calc) / (len(pilar_scores_calc) * 4)) * 100 if pilar_scores_calc else 0
 
+# Construir respostas_detalhe para TODOS os pilares usando a estrutura dedicada
+for pilar in pilares_lista:
+    info = perguntas[pilar]
+    for idx, item in enumerate(info["itens"], 1):
+        nota = obter_resposta(pilar, idx)
+        respostas_detalhe.append({
+            "Pilar": pilar.split(" ", 1)[1],
+            "Pergunta": item["pergunta"],
+            "Nota (0-4)": nota,
+            "Nível": LABELS_NOTA[nota]
+        })
+
+# Display questions for the selected pilar
 pilar = pilar_selecionado
 info = perguntas[pilar]
 
@@ -645,7 +712,7 @@ info = perguntas[pilar]
 total_pilar = len(info["itens"])
 respondidas_pilar = sum(
     1 for idx in range(1, total_pilar + 1)
-    if st.session_state.get(f"slider_{pilar}_{idx}", 0) != 0
+    if obter_resposta(pilar, idx) != 0
 )
 pct_pilar = respondidas_pilar / total_pilar if total_pilar else 0
 st.markdown(f"*Progresso neste pilar: {respondidas_pilar}/{total_pilar}*")
@@ -667,25 +734,33 @@ for idx, item in enumerate(info["itens"], 1):
         for nota_val, nota_desc in item["notas"].items():
             st.markdown(f"{EMOJIS_NOTA[nota_val]} Nota {nota_val}: {nota_desc}")
 
+    # ════════════════════════════════════════════════════════════════════════════════
+    # SLIDER COM CALLBACK PARA PRESERVAR VALORES
+    # ════════════════════════════════════════════════════════════════════════════════
+    # O slider usa:
+    # 1. value: lê da estrutura dedicada (respostas_assessment)
+    # 2. on_change: callback que salva o valor na estrutura dedicada quando muda
+    # 3. key: chave única para o widget (necessária para o Streamlit)
+    # ════════════════════════════════════════════════════════════════════════════════
+    
+    valor_atual = obter_resposta(pilar, idx)
+    
     nota = st.select_slider(
         f"Nota — questão {idx}",
         options=[0, 1, 2, 3, 4],
-        value=0,
+        value=valor_atual,  # Lê da estrutura dedicada
         format_func=lambda x: f"{EMOJIS_NOTA[x]} {x} — {LABELS_NOTA[x]}",
         key=f"slider_{pilar}_{idx}",
+        on_change=salvar_resposta,  # Callback para salvar quando muda
+        args=(pilar, idx),  # Argumentos para o callback
         label_visibility="collapsed"
     )
 
     pilar_scores.append(nota)
-    respostas_detalhe.append({
-        "Pilar": pilar.split(" ", 1)[1],
-        "Pergunta": item["pergunta"],
-        "Nota (0-4)": nota,
-        "Nível": LABELS_NOTA[nota]
-    })
 
     st.markdown("")
 
+# Update the score for the current pilar
 scores[pilar] = (sum(pilar_scores) / (len(pilar_scores) * 4)) * 100 if pilar_scores else 0
 
 st.markdown("---")
@@ -696,39 +771,7 @@ for titulo, descricao in EXEMPLOS_REAIS[pilar][setor_key]:
         unsafe_allow_html=True
     )
 
-# ── CONTROLE DE NAVEGAÇÃO ─────────────────────────────────────────────
-if "_nav_target" in st.session_state:
-    pilar = st.session_state["_nav_target"]
-    del st.session_state["_nav_target"]
-
-idx_pilar = pilares_lista.index(pilar)
-
-st.markdown("---")
-nav_col1, nav_col2, nav_col3 = st.columns([2, 3, 2])
-
-with nav_col1:
-    if idx_pilar > 0:
-        st.markdown(f"← {pilares_lista[idx_pilar - 1].split(' ', 1)[1]}")
-
-with nav_col3:
-    if idx_pilar < len(pilares_lista) - 1:
-        st.markdown(f"{pilares_lista[idx_pilar + 1].split(' ', 1)[1]} →")
-
-with nav_col2:
-    if idx_pilar < len(pilares_lista) - 1:
-        next_pilar = pilares_lista[idx_pilar + 1]
-
-        if st.button(
-            f"Próximo: {next_pilar.split(' ', 1)[1]} →",
-            key="nav_proximo",
-            use_container_width=True
-        ):
-            st.session_state["_nav_target"] = next_pilar
-            st.rerun()
-
-        st.markdown("[⬆ Voltar ao topo](#top)")
-
-# ── RESULTADO ─────────────────────────────────────────────────────────────────
+# ── RESULTADO ────
 st.divider()
 st.subheader("📋 Resultado do Diagnóstico")
 
@@ -878,8 +921,7 @@ st.markdown(" 🚨 Top 3 Gaps Críticos — Onde agir primeiro e o que fazer?")
 todos_gaps = []
 for pilar, info in perguntas.items():
     for idx, item in enumerate(info["itens"], 1):
-        key = f"slider_{pilar}_{idx}"
-        nota_atual = st.session_state.get(key, 0)
+        nota_atual = obter_resposta(pilar, idx)
         todos_gaps.append({
             "pilar": pilar.split(" ", 1)[1],
             "pergunta": item["pergunta"],
